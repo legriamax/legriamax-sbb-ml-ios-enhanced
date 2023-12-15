@@ -34,4 +34,6 @@ public enum ObjectDetectionError: Swift.Error {
             return "Your device doesn't seem to have a camera."
         case .deniedCameraAuthorization:
             return "You haven't granted us the authorization to access your camera."
-  
+        }
+    }
+}
