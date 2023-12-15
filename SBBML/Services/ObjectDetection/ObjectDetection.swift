@@ -86,4 +86,35 @@ class ObjectDetection: ObjectDetectionProtocol {
             objectRecognition.imageCropAndScaleOption = .scaleFit
             self.requests = [objectRecognition]
         } catch let error as NSError {
-            Logger.log("Model loading went wrong: \(e
+            Logger.log("Model loading went wrong: \(error)", .error)
+        }
+    }
+    
+    private func processDetectedObjects(observations: [VNRecognizedObjectObservation]) {
+        guard let previewLayer = previewLayer else {
+            Logger.log("ObjectDetection: Cannot process detected objects, because the PreviewLayer is not set.", .error)
+            return
+        }
+        
+        DispatchQueue.main.async { [self] in
+            var detectedObjects = [DetectedObject]()
+            for observation in observations {
+                if let identifier = observation.labels.first?.identifier {
+                    //Logger.log("Found \(identifier) ((\(observation.confidence)) in rect: \(observation.boundingBox)", .debug)
+                                        
+                    // convert to rect in screen
+                    let convertedBoundingBoxForCurrentDeviceOrientation = observation.boundingBox.convertForCurrentDeviceOrientation()
+                    let boundingBoxInPreviewLayer = previewLayer.layerRectConverted(fromMetadataOutputRect: convertedBoundingBoxForCurrentDeviceOrientation)
+                    
+                    var depth: Float?
+                    if let depthBuffer = currentDepthBuffer {
+                        depth = depthRecognition?.getDepth(of: CGPoint(x: convertedBoundingBoxForCurrentDeviceOrientation.midX, y: convertedBoundingBoxForCurrentDeviceOrientation.midY), in: depthBuffer)
+                    }
+                    
+                    detectedObjects.append(DetectedObject(label: identifier, confidence: observation.confidence, depth: depth, rect: observation.boundingBox, rectInPreviewLayer: boundingBoxInPreviewLayer))
+                }
+            }
+            self.detectedObjectsSubject.send(detectedObjects)
+        }
+    }
+}
