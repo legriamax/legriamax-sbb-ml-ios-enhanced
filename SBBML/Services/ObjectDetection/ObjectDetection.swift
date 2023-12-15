@@ -18,4 +18,72 @@ class ObjectDetection: ObjectDetectionProtocol {
     }
     private let detectedObjectsSubject = CurrentValueSubject<[DetectedObject], Never>([DetectedObject]())
     
-    var errorPublishe
+    var errorPublisher: AnyPublisher<ObjectDetectionError?, Never> {
+        errorSubject
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+    private let errorSubject = CurrentValueSubject<ObjectDetectionError?, Never>(nil)
+    
+    var inferencePerformanceAnalysis: InferencePerformanceAnalysisProtocol?
+    var depthRecognition: DepthRecognitionProtocol?
+    private var requests = [VNRequest]()
+    var previewLayer: AVCaptureVideoPreviewLayer?
+    private var currentDepthBuffer: CVPixelBuffer?
+        
+    init(modelProvider: ModelProvider, thresholdProvider: ThresholdProvider, inferencePerformanceAnalysis: InferencePerformanceAnalysisProtocol?, depthRecognition: DepthRecognitionProtocol?) {
+        self.inferencePerformanceAnalysis = inferencePerformanceAnalysis
+        self.depthRecognition = depthRecognition
+        setupCoreML(modelProvider: modelProvider, thresholdProvider: thresholdProvider)
+    }
+    
+    func detectObjects(in videoBuffer: CMSampleBuffer, depthBuffer: CVPixelBuffer?) {
+        do {
+            guard let imageBuffer = CMSampleBufferGetImageBuffer(videoBuffer) else {
+                throw ObjectDetectionError.cannotCreateImageBuffer
+            }
+            
+            self.currentDepthBuffer = depthBuffer
+            let currentDeviceOrientation = UIDevice.current.orientation
+            
+            /*
+            // This code can be used for debugging, to see, how the imageBuffer is oriented (set a breakpoint a check resultImage with QuickLook in the XCode debugger
+            let ciImage = CIImage(cvPixelBuffer: imageBuffer)
+            let resultImage = UIImage(ciImage: ciImage, scale: 1, orientation: currentDeviceOrientation.exifOrientation.uiImageOrientation)
+            */
+            
+            let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: imageBuffer, orientation: currentDeviceOrientation.exifOrientation, options: [:])
+            do {
+                let startTime = Date().timeIntervalSince1970
+                try imageRequestHandler.perform(self.requests)
+                let endTime = Date().timeIntervalSince1970
+                inferencePerformanceAnalysis?.updateInferencePerformance(with: endTime - startTime)
+            } catch {
+                print(error)
+            }
+        } catch let error as ObjectDetectionError {
+            self.errorSubject.send(error)
+        } catch {
+            Logger.log("Unknown error while trying to create CMSampleBufferGetImageBuffer: \(error)", .error)
+        }
+    }
+    
+    func stop() {
+        requests.removeAll()
+    }
+    
+    private func setupCoreML(modelProvider: ModelProvider, thresholdProvider: ThresholdProvider) {
+        
+        do {
+            let visionModel = try modelProvider.getModel()
+            visionModel.featureProvider = thresholdProvider
+
+            let objectRecognition = VNCoreMLRequest(model: visionModel, completionHandler: { (request, error) in
+                if let objectObservations = request.results as? [VNRecognizedObjectObservation] {
+                    self.processDetectedObjects(observations: objectObservations)
+                }
+            })
+            objectRecognition.imageCropAndScaleOption = .scaleFit
+            self.requests = [objectRecognition]
+        } catch let error as NSError {
+            Logger.log("Model loading went wrong: \(e
