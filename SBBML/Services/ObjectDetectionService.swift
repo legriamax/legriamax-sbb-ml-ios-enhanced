@@ -60,4 +60,66 @@ public class ObjectDetectionService: ObjectDetectionServiceProtocol {
         self.modelFileName = modelFileName
         self.configuration = configuration
         self.cameraController = CameraController(previewVideoGravity: configuration.previewVideoGravity, depthRecordingEnabled: configuration.distanceRecordingEnabled)
-        self.objectDetection = ObjectDetection(modelProvider: ModelProvider(modelFileName: modelFileName, computeUnits: configuration.computeUnits), thresholdProvider: ThresholdProvider(
+        self.objectDetection = ObjectDetection(modelProvider: ModelProvider(modelFileName: modelFileName, computeUnits: configuration.computeUnits), thresholdProvider: ThresholdProvider(confidenceThreshold: Double(configuration.confidenceThreshold), iouThreshold: configuration.iouThreshold), inferencePerformanceAnalysis: InferencePerformanceAnalysis(), depthRecognition: DepthRecognition())
+        self.objectTracking = ObjectTracking(confidenceThreshold: configuration.objectTrackingConfidenceThreshold)
+        
+        setupSubsriptions(for: configuration)
+    }
+    
+    /**
+     Requests authorization for media capture (camera) and configures the AVCaptureDevice. By default, camera authorization is automatically requested when ``CameraStreamView`` appears for the first time on the screen. However you can also trigger the prompt manually by calling ``requestCameraAuthorization()`` (e.g. during Onboarding).
+     */
+    public func requestCameraAuthorization() {
+        cameraController.requestCameraAuthorizationAndConfigureCaptureSession()
+    }
+
+    private func setupSubsriptions(for configuration: ObjectDetectionServiceConfiguration) {
+        errorSubscription = objectDetection.errorPublisher
+            .merge(with: cameraController.errorPublisher)
+            .multicast(subject: errorSubject)
+            .connect()
+        
+        detectedObjectsSubscription = objectDetection.detectedObjectsPublisher
+            .map({ detectedObjects -> [DetectedObject] in
+                guard let labels = configuration.detectableClassLabels else {
+                    return detectedObjects
+                }
+                return detectedObjects.filter { labels.contains($0.label) }
+            })
+            .map({ [weak self] detectedObjects -> [DetectedObject] in
+                if configuration.objectTrackingEnabled && !detectedObjects.isEmpty {
+                    self?.objectTracking.startTracking(objects: detectedObjects)
+                }
+                return detectedObjects
+            })
+            .merge(with: objectTracking.trackedObjectsPublisher)
+            .multicast(subject: detectedObjectsSubject)
+            .connect()
+        
+        cameraOutputSubscription = cameraController.cameraOutputPublisher
+            .compactMap { $0 }
+            .sink { [weak self] cameraOutput in
+                let currentDate = NSDate.timeIntervalSinceReferenceDate
+                // Run object detection at the given pace and track objects in between
+                if currentDate - (self?.lastObjectDetectionCall ?? 0) >= configuration.objectDetectionRate {
+                    self?.lastObjectDetectionCall = currentDate
+                    self?.objectTracking.stopTracking()
+                    self?.objectDetection.detectObjects(in: cameraOutput.videoBuffer, depthBuffer: cameraOutput.depthBuffer)
+                } else if configuration.objectTrackingEnabled && (self?.objectTracking.isTracking ?? false) {
+                    self?.objectTracking.updateTrackedObjects(in: cameraOutput.videoBuffer)
+                }
+            }
+        
+        currentObjectDetectionInferenceTimeSubscription = objectDetection.inferencePerformanceAnalysis?.currentInferenceTimePublisher
+            .multicast(subject: currentObjectDetectionInferenceTimeSubject)
+            .connect()
+    }
+          
+    func updatePreviewLayer() {
+        objectDetection.previewLayer = cameraController.previewLayer
+        objectTracking.previewLayer = cameraController.previewLayer
+    }
+    
+    deinit {
+        objectDetection.stop()
+    
