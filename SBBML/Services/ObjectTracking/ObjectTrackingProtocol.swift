@@ -4,4 +4,14 @@
 
 import Foundation
 import Combine
-import AVFoun
+import AVFoundation
+
+protocol ObjectTrackingProtocol {
+    var trackedObjectsPublisher: AnyPublisher<[DetectedObject], Never> { get }
+    var previewLayer: AVCaptureVideoPreviewLayer? { get set }
+    var isTracking: Bool { get }
+
+    func startTracking(objects: [DetectedObject])
+    func stopTracking()
+    func updateTrackedObjects(in sampleBuffer: CMSampleBuffer)
+}
