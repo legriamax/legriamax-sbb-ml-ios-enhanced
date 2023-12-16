@@ -122,4 +122,16 @@ public class ObjectDetectionService: ObjectDetectionServiceProtocol {
     
     deinit {
         objectDetection.stop()
+    }
     
+    // Initializer used for UnitTesting
+    init(configuration: ObjectDetectionServiceConfiguration = ObjectDetectionServiceConfiguration(), cameraController: CameraControllerProtocol, objectDetection: ObjectDetectionProtocol, objectTracking: ObjectTrackingProtocol) {
+        self.modelFileName = ""
+        self.configuration = configuration
+        self.cameraController = cameraController
+        self.objectDetection = objectDetection
+        self.objectTracking = objectTracking
+        
+        setupSubsriptions(for: configuration)
+    }
+}
