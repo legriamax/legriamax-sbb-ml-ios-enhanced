@@ -153,4 +153,65 @@ class CameraController: NSObject, CameraControllerProtocol {
         if captureSession.canAddOutput(videoDataOutput) {
             captureSession.addOutput(videoDataOutput)
             
-            videoDataOutput.alwaysDiscardsLateVideoFrames = tr
+            videoDataOutput.alwaysDiscardsLateVideoFrames = true
+            videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)]
+        } else {
+            captureSession.commitConfiguration()
+            throw ObjectDetectionError.outputsAreInvalid
+        }
+        
+        if depthRecordingEnabled && currentDeviceSupportsDepthRecording {
+            if captureSession.canAddOutput(depthDataOutput) {
+                captureSession.addOutput(depthDataOutput)
+                depthDataOutput.isFilteringEnabled = true
+                if let connection = depthDataOutput.connection(with: .depthData) {
+                    connection.isEnabled = true
+                } else {
+                    Logger.log("No AVCaptureConnection", .error)
+                }
+            } else {
+                captureSession.commitConfiguration()
+                throw ObjectDetectionError.outputsAreInvalid
+            }
+        }
+        
+        let videoDataOutputQueue = DispatchQueue(label: "VideoDataOutput", qos: .userInitiated, attributes: [], autoreleaseFrequency: .workItem)
+        if depthRecordingEnabled && currentDeviceSupportsDepthRecording {
+            outputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoDataOutput, depthDataOutput])
+            outputSynchronizer!.setDelegate(self, queue: videoDataOutputQueue)
+        } else {
+            videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
+        }
+        
+        captureSession.commitConfiguration()
+    }
+}
+
+// Using AVCaptureVideoDataOutputSampleBufferDelegate if DepthData is not enabled
+extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        cameraOutputSubject.send(CameraOutput(videoBuffer: sampleBuffer, depthBuffer: nil))
+    }
+}
+
+// Using AVCaptureDataOutputSynchronizerDelegate if DepthData is enabled
+extension CameraController: AVCaptureDataOutputSynchronizerDelegate {
+    func dataOutputSynchronizer(_ synchronizer: AVCaptureDataOutputSynchronizer, didOutput synchronizedDataCollection: AVCaptureSynchronizedDataCollection) {
+        guard let syncedVideoData: AVCaptureSynchronizedSampleBufferData =
+            synchronizedDataCollection.synchronizedData(for: videoDataOutput) as? AVCaptureSynchronizedSampleBufferData, let syncedDepthData: AVCaptureSynchronizedDepthData =
+                synchronizedDataCollection.synchronizedData(for: depthDataOutput) as? AVCaptureSynchronizedDepthData else {
+            Logger.log("DataOutputSynchronizer no depth output", .debug)
+            return
+        }
+        
+        if syncedVideoData.sampleBufferWasDropped || syncedDepthData.depthDataWasDropped {
+            Logger.log("DataOutputSynchronizer dropped sampleBuffer or depthData: \(syncedVideoData.droppedReason)", .debug)
+            // see https://developer.apple.com/library/archive/technotes/tn2445/_index.html for fixes if buffers are dropped frequently (freezing Preview layer)
+            return
+        }
+        
+        let sampleBuffer = syncedVideoData.sampleBuffer
+        let depthData = syncedDepthData.depthData
+        let depthPixelBuffer = depthData.depthDataMap
+        
+        cameraOutputSubject.send(CameraOutput(videoBuffer:
