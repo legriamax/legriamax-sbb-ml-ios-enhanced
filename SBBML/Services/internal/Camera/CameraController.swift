@@ -214,4 +214,6 @@ extension CameraController: AVCaptureDataOutputSynchronizerDelegate {
         let depthData = syncedDepthData.depthData
         let depthPixelBuffer = depthData.depthDataMap
         
-        cameraOutputSubject.send(CameraOutput(videoBuffer:
+        cameraOutputSubject.send(CameraOutput(videoBuffer: sampleBuffer, depthBuffer: depthPixelBuffer))
+    }
+}
