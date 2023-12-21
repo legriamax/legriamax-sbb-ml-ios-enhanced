@@ -13,4 +13,10 @@ struct CameraStreamViewControllerRepresentation: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: CameraStreamViewController, context: UIViewControllerRepresentableContext<CameraStreamViewControllerRepresentation>) {
         if uiViewController.objectDetectionService.configuration != objectDetectionService.configuration || uiViewController.objectDetectionService.modelFileName != objectDetectionService.modelFileName {
-            uiViewController
+            uiViewController.removePreviewLayer()
+            uiViewController.objectDetectionService = objectDetectionService
+            uiViewController.addPreviewLayer()
+        }
+    }
+}
+
