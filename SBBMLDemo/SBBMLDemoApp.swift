@@ -21,4 +21,7 @@ struct SBBMLDemoApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-          
+                .environmentObject(onboardingViewModel)
+        }
+    }
+}
