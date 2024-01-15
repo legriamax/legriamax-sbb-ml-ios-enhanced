@@ -16,4 +16,35 @@ class FakeCameraController: CameraControllerProtocol {
     }
     
     let errorSubject = PassthroughSubject<ObjectDetectionError?, Never>()
-    var e
+    var errorPublisher: AnyPublisher<ObjectDetectionError?, Never> {
+        return errorSubject.eraseToAnyPublisher()
+    }
+    
+    var previewLayer: AVCaptureVideoPreviewLayer
+    
+    init() {
+        self.previewLayer = AVCaptureVideoPreviewLayer()
+    }
+    
+    var requestCameraAuthorizationAndConfigureCaptureSessionCalled = false
+    func requestCameraAuthorizationAndConfigureCaptureSession() {
+        requestCameraAuthorizationAndConfigureCaptureSessionCalled = true
+    }
+    
+    var receivedView: UIView?
+    func displayPreview(on view: UIView) {
+        receivedView = view
+    }
+    
+    var removedPreview = false
+    func removePreview() {
+        removedPreview = true
+    }
+    
+    var receivedBounds: CGRect?
+    var receivedDeviceOrientation: UIDeviceOrientation?
+    func updatePreview(for bounds: CGRect, deviceOrientation: UIDeviceOrientation) {
+        receivedBounds = bounds
+        receivedDeviceOrientation = deviceOrientation
+    }
+}
