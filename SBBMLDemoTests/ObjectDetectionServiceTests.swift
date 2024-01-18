@@ -63,4 +63,73 @@ class ObjectDetectionServiceTests: XCTestCase {
         var counter = 0
         let sub = objectDetectionService.detectedObjectsPublisher.sink { detectedObjects in
             counter += 1
-            switch cou
+            switch counter {
+            case 1:
+                XCTAssertTrue(detectedObjects.isEmpty)
+                XCTAssertNil(self.fakeObjectTracking.receivedObjects)
+                self.fakeObjectDetection.detectedObjectsSubject.send(self.fakeDetectedObjects1)
+            case 2:
+                XCTAssertEqual(detectedObjects, self.fakeDetectedObjects1)
+                XCTAssertEqual(detectedObjects, self.fakeObjectTracking.receivedObjects)
+                expectation.fulfill()
+            default:
+                XCTFail()
+            }
+        }
+                
+        waitForExpectations(timeout: timeout) { _ in
+            sub.cancel()
+        }
+    }
+    
+    func testTrackedObjectsArePublished() throws {
+        self.objectDetectionService = ObjectDetectionService(configuration: ObjectDetectionServiceConfiguration(objectDetectionRate: 2, objectTrackingEnabled: true), cameraController: fakeCameraController, objectDetection: fakeObjectDetection, objectTracking: fakeObjectTracking)
+        
+        let expectation = self.expectation(description: "wait for detected objects")
+        
+        var counter = 0
+        let sub = objectDetectionService.detectedObjectsPublisher.sink { detectedObjects in
+            counter += 1
+            switch counter {
+            case 1:
+                XCTAssertTrue(detectedObjects.isEmpty)
+                self.fakeObjectDetection.detectedObjectsSubject.send(self.fakeDetectedObjects1)
+            case 2:
+                XCTAssertEqual(detectedObjects, self.fakeDetectedObjects1)
+                XCTAssertEqual(detectedObjects, self.fakeObjectTracking.receivedObjects)
+                self.fakeObjectTracking.trackedObjectsSubject.send(self.fakeDetectedObjects2)
+            case 3:
+                XCTAssertEqual(detectedObjects, self.fakeDetectedObjects2)
+                self.fakeObjectTracking.trackedObjectsSubject.send([])
+            case 4:
+                XCTAssertTrue(detectedObjects.isEmpty)
+                expectation.fulfill()
+            default:
+                XCTFail()
+            }
+        }
+                
+        waitForExpectations(timeout: timeout) { _ in
+            sub.cancel()
+        }
+    }
+    
+    func testObjectTrackingIsStoppedWhenNewObjectsAreDetected() throws {
+        self.objectDetectionService = ObjectDetectionService(configuration: ObjectDetectionServiceConfiguration(objectDetectionRate: 1, objectTrackingEnabled: true), cameraController: fakeCameraController, objectDetection: fakeObjectDetection, objectTracking: fakeObjectTracking)
+        
+        let image = UIImage(named: "Sitz_1Klasse", in: Bundle(for: ObjectDetectionTests.self), compatibleWith: nil)!
+        let cmSampleBuffer = CMSampleBufferCreator.cmSampleBuffer(from: image)
+        let expectation = self.expectation(description: "wait for detected objects")
+        
+        self.fakeCameraController.cameraOutputSubject.send(CameraOutput(videoBuffer: cmSampleBuffer, depthBuffer: nil))
+
+        
+        var counter = 0
+        let sub = objectDetectionService.detectedObjectsPublisher.sink { detectedObjects in
+            counter += 1
+            switch counter {
+            case 1:
+                XCTAssertTrue(detectedObjects.isEmpty)
+                self.fakeObjectDetection.detectedObjectsSubject.send(self.fakeDetectedObjects1)
+            case 2:
+                XCTAssertEqual(detectedObjects, self.fakeDetectedObje
