@@ -132,4 +132,85 @@ class ObjectDetectionServiceTests: XCTestCase {
                 XCTAssertTrue(detectedObjects.isEmpty)
                 self.fakeObjectDetection.detectedObjectsSubject.send(self.fakeDetectedObjects1)
             case 2:
-                XCTAssertEqual(detectedObjects, self.fakeDetectedObje
+                XCTAssertEqual(detectedObjects, self.fakeDetectedObjects1)
+                XCTAssertEqual(detectedObjects, self.fakeObjectTracking.receivedObjects)
+                self.fakeObjectTracking.trackedObjectsSubject.send(self.fakeDetectedObjects2)
+            case 3:
+                XCTAssertEqual(detectedObjects, self.fakeDetectedObjects2)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.fakeCameraController.cameraOutputSubject.send(CameraOutput(videoBuffer: cmSampleBuffer, depthBuffer: nil))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        XCTAssertTrue(self.fakeObjectTracking.stoppedTracking)
+                        expectation.fulfill()
+                    }
+                }
+            default:
+                XCTFail()
+            }
+        }
+                
+        waitForExpectations(timeout: timeout) { _ in
+            sub.cancel()
+        }
+    }
+    
+    // MARK: errorPublisher tests
+
+    func testObjectDetectionErrorsArePublished() throws {
+        let expectation = self.expectation(description: "wait for errors")
+        
+        var counter = 0
+        let sub = objectDetectionService.errorPublisher.sink { error in
+            counter += 1
+            switch counter {
+            case 1:
+                XCTAssertNil(error)
+                self.fakeObjectDetection.errorSubject.send(.inputsAreInvalid)
+            case 2:
+                XCTAssertEqual(error, .inputsAreInvalid)
+                self.fakeObjectDetection.errorSubject.send(nil)
+            case 3:
+                XCTAssertNil(error)
+                self.fakeObjectDetection.errorSubject.send(.outputsAreInvalid)
+            case 4:
+                XCTAssertEqual(error, .outputsAreInvalid)
+                expectation.fulfill()
+            default:
+                XCTFail()
+            }
+        }
+                
+        waitForExpectations(timeout: timeout) { _ in
+            sub.cancel()
+        }
+    }
+    
+    func testCameraControllerErrorsArePublished() throws {
+        let expectation = self.expectation(description: "wait for errors")
+        
+        var counter = 0
+        let sub = objectDetectionService.errorPublisher.sink { error in
+            counter += 1
+            switch counter {
+            case 1:
+                XCTAssertNil(error)
+                self.fakeCameraController.errorSubject.send(.noCamerasAvailable)
+            case 2:
+                XCTAssertEqual(error, .noCamerasAvailable)
+                self.fakeCameraController.errorSubject.send(nil)
+            case 3:
+                XCTAssertNil(error)
+                self.fakeCameraController.errorSubject.send(.cannotCreateImageBuffer)
+            case 4:
+                XCTAssertEqual(error, .cannotCreateImageBuffer)
+                expectation.fulfill()
+            default:
+                XCTFail()
+            }
+        }
+                
+        waitForExpectations(timeout: timeout) { _ in
+            sub.cancel()
+        }
+    }
+}
